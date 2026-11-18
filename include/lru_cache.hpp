@@ -22,7 +22,6 @@ private:
     Node* tail;
     std::mutex mtx;
 
-    // Detach node from its current position
     void remove(Node* node) {
         Node* prev_node = node->prev;
         Node* next_node = node->next;
@@ -30,7 +29,6 @@ private:
         next_node->prev = prev_node;
     }
 
-    // Insert node right after dummy head (Most Recently Used position)
     void insert(Node* node) {
         Node* next_node = head->next;
         head->next = node;
@@ -73,8 +71,6 @@ public:
 
     void put(const std::string& key, const std::string& val) {
         std::unique_lock<std::mutex> lock(mtx);
-        // A zero-capacity shard is valid when the cache capacity is smaller
-        // than its shard count. It must never retain an entry.
         if (cap == 0) {
             return;
         }
