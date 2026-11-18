@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MINIREDIS_THREAD_POOL_HPP
+#define MINIREDIS_THREAD_POOL_HPP
 #include <vector>
 #include <queue>
 #include <thread>
@@ -6,6 +7,7 @@
 #include <condition_variable>
 #include <functional>
 #include <future>
+#include <stdexcept>
 
 class ThreadPool {
 private:
@@ -17,6 +19,10 @@ private:
 
 public:
     ThreadPool(int num_threads) : stop(false) {
+        if (num_threads < 1) {
+            throw std::invalid_argument("thread pool requires at least one worker");
+        }
+
         for (int i = 0; i < num_threads; i++) {
             workers.emplace_back([this]() {
                 while (true) {
@@ -40,6 +46,9 @@ public:
         }
     }
 
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+
     // Submit a task and get a std::future to wait for its completion
     template <class F>
     auto enqueue(F&& f) -> std::future<decltype(f())> {
@@ -52,6 +61,9 @@ public:
         std::future<return_type> res = task->get_future();
         {
             std::unique_lock<std::mutex> lock(mtx);
+            if (stop) {
+                throw std::runtime_error("cannot enqueue work on a stopped thread pool");
+            }
             tasks.emplace([task]() { (*task)(); });
         }
         cv.notify_one();
@@ -71,3 +83,5 @@ public:
         }
     }
 };
+
+#endif  // MINIREDIS_THREAD_POOL_HPP

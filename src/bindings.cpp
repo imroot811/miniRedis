@@ -4,7 +4,11 @@
 #include "../include/thread_pool.hpp"
 #include <chrono>
 #include <atomic>
+#include <algorithm>
+#include <future>
 #include <random>
+#include <stdexcept>
+#include <vector>
 
 namespace py = pybind11;
 
@@ -12,6 +16,16 @@ namespace py = pybind11;
 std::pair<double, int> execute_workload(
     int num_shards, int cap, int num_threads, int total_ops, int read_ratio
 ) {
+    if (num_threads < 1) {
+        throw std::invalid_argument("benchmark requires at least one thread");
+    }
+    if (total_ops < 1) {
+        throw std::invalid_argument("benchmark requires at least one operation");
+    }
+    if (read_ratio < 0 || read_ratio > 100) {
+        throw std::invalid_argument("read ratio must be between 0 and 100");
+    }
+
     ShardedCache cache(cap, num_shards);
     ThreadPool pool(num_threads);
 
@@ -22,18 +36,21 @@ std::pair<double, int> execute_workload(
     }
 
     std::atomic<int> hits{0};
-    int ops_per_thread = total_ops / num_threads;
+    const int base_ops_per_thread = total_ops / num_threads;
+    const int remaining_ops = total_ops % num_threads;
     std::vector<std::future<void>> futures;
+    futures.reserve(num_threads);
 
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int t = 0; t < num_threads; t++) {
-        futures.push_back(pool.enqueue([&, t]() {
+        const int thread_ops = base_ops_per_thread + (t < remaining_ops ? 1 : 0);
+        futures.push_back(pool.enqueue([&, t, thread_ops]() {
             // Fast per-thread random generator
             std::mt19937 rng(1337 + t);
             std::string dummy_val;
 
-            for (int i = 0; i < ops_per_thread; i++) {
+            for (int i = 0; i < thread_ops; i++) {
                 int k = rng() % key_range;
                 int op = rng() % 100;
                 std::string key = "key_" + std::to_string(k);
@@ -93,9 +110,11 @@ public:
         // 2. Lock-Striped Cache (num_shards = user specified, e.g., 32)
         auto [sharded_ms, sharded_hits] = execute_workload(num_shards, cap, num_threads, total_ops, read_ratio);
 
-        double global_ops_sec = (total_ops / (global_ms / 1000.0));
-        double sharded_ops_sec = (total_ops / (sharded_ms / 1000.0));
-        double speedup = global_ms / std::max(0.001, sharded_ms);
+        const double safe_global_ms = std::max(0.001, global_ms);
+        const double safe_sharded_ms = std::max(0.001, sharded_ms);
+        double global_ops_sec = total_ops / (safe_global_ms / 1000.0);
+        double sharded_ops_sec = total_ops / (safe_sharded_ms / 1000.0);
+        double speedup = safe_global_ms / safe_sharded_ms;
         double pct_increase = ((sharded_ops_sec - global_ops_sec) / global_ops_sec) * 100.0;
 
         py::dict result;

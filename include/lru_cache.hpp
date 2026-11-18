@@ -1,5 +1,6 @@
-#pragma once
-#include <iostream>
+#ifndef MINIREDIS_LRU_CACHE_HPP
+#define MINIREDIS_LRU_CACHE_HPP
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -39,13 +40,14 @@ private:
     }
 
 public:
-    LRUCache(int capacity) {
-        cap = std::max(1, capacity);
-        head = new Node("", "");
-        tail = new Node("", "");
+    explicit LRUCache(int capacity)
+        : cap(std::max(0, capacity)), head(new Node("", "")), tail(new Node("", "")) {
         head->next = tail;
         tail->prev = head;
     }
+
+    LRUCache(const LRUCache&) = delete;
+    LRUCache& operator=(const LRUCache&) = delete;
 
     ~LRUCache() {
         Node* curr = head;
@@ -71,6 +73,12 @@ public:
 
     void put(const std::string& key, const std::string& val) {
         std::unique_lock<std::mutex> lock(mtx);
+        // A zero-capacity shard is valid when the cache capacity is smaller
+        // than its shard count. It must never retain an entry.
+        if (cap == 0) {
+            return;
+        }
+
         auto it = mp.find(key);
         if (it != mp.end()) {
             Node* node = it->second;
@@ -92,3 +100,5 @@ public:
         mp[key] = new_node;
     }
 };
+
+#endif  // MINIREDIS_LRU_CACHE_HPP

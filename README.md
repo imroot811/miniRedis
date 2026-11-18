@@ -32,6 +32,12 @@ uvicorn app:app --reload
 
 The API will be available at `http://127.0.0.1:8000`, with interactive documentation at `http://127.0.0.1:8000/docs`.
 
+Run the extension tests after building it:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## API
 
 ### Store a value
